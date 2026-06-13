@@ -27,6 +27,11 @@ public class DownloadLinksRenderer {
 
     private static final Pattern TAG_PATTERN = Pattern.compile("(?s)<download-links\\b([^>]*)>.*?</download-links>");
     private static final Pattern DATA_LINKS_PATTERN = Pattern.compile("data-links\\s*=\\s*\"(.*?)\"");
+    private static final Pattern DOWNLOAD_LINK_PATTERN = Pattern.compile("(?s)<download-link\\b([^>]*)/?>.*?</download-link>|<download-link\\b([^>]*)/>");
+    private static final Pattern ATTRIBUTE_PATTERN = Pattern.compile("([\\w:-]+)\\s*=\\s*(\"([^\"]*)\"|'([^']*)')");
+    private static final Pattern ESCAPED_DOWNLOAD_LINKS_TAG_PATTERN = Pattern.compile("&lt;(/?download-links\\b.*?)&gt;", Pattern.DOTALL);
+    private static final Pattern ESCAPED_DOWNLOAD_LINK_TAG_PATTERN = Pattern.compile("&lt;(/?download-link\\b.*?)&gt;", Pattern.DOTALL);
+    private static final Pattern DOWNLOAD_LINK_TAG_PATTERN = Pattern.compile("<(/?download-link\\b[^>]*)>", Pattern.DOTALL);
     private static final String STYLE_ID = "tools-download-links-style";
     private static final String STYLE_MARKER = "<!-- " + STYLE_ID + " -->";
 
@@ -37,10 +42,11 @@ public class DownloadLinksRenderer {
         if (isBlank(html)) {
             return Mono.just(html);
         }
-        if (!TAG_PATTERN.matcher(html).find()) {
+        String normalizedHtml = unescapeDownloadLinkTags(html);
+        if (!TAG_PATTERN.matcher(normalizedHtml).find()) {
             return Mono.just(html);
         }
-        boolean needsStyle = !html.contains(STYLE_ID) && !html.contains(STYLE_MARKER);
+        boolean needsStyle = !normalizedHtml.contains(STYLE_ID) && !normalizedHtml.contains(STYLE_MARKER);
 
         return settingFetcher.fetch(DownloadSetting.GROUP, DownloadSetting.class)
                 .defaultIfEmpty(new DownloadSetting())
@@ -49,20 +55,10 @@ public class DownloadLinksRenderer {
                     String styleBlock = needsStyle ? buildStyleBlock(downloadSetting) : "";
 
                     final boolean[] styleInjected = {false};
-                    String result = replaceAll(html, TAG_PATTERN, matcher -> {
+                    String result = replaceAll(normalizedHtml, TAG_PATTERN, matcher -> {
                         String attrs = matcher.group(1);
-                        String data = extractGroup(attrs, DATA_LINKS_PATTERN, 1);
-                        if (data == null) {
-                            return "";
-                        }
-                        data = unescapeHtml(data);
-                        List<Map<String, Object>> links;
-                        try {
-                            links = objectMapper.readValue(data, new TypeReference<>() {
-                            });
-                        } catch (Exception e) {
-                            links = Collections.emptyList();
-                        }
+                        String tagContent = matcher.group();
+                        List<Map<String, Object>> links = parseLinks(attrs, tagContent);
                         String htmlContent = buildHtml(links, sourceIconMap);
                         if (needsStyle && !styleInjected[0] && !links.isEmpty()) {
                             styleInjected[0] = true;
@@ -70,15 +66,96 @@ public class DownloadLinksRenderer {
                         }
                         return htmlContent;
                     });
-                    if (needsStyle && !styleInjected[0]) {
-                        if (result.contains("</head>")) {
-                            result = result.replace("</head>", styleBlock + "\n</head>");
-                        } else {
-                            result = styleBlock + "\n" + result;
-                        }
-                    }
                     return result;
                 });
+    }
+
+    public Mono<String> renderContent(String raw, String content) {
+        return render(content)
+                .flatMap(renderedContent -> {
+                    if (hasRenderedBlock(renderedContent) || !containsDownloadLinks(raw)) {
+                        return Mono.just(renderedContent);
+                    }
+                    String rawBlocks = extractDownloadLinkBlocks(raw);
+                    return render(rawBlocks).map(renderedBlocks ->
+                            isBlank(renderedBlocks) ? renderedContent : appendHtml(renderedContent, renderedBlocks)
+                    );
+                });
+    }
+
+    private boolean containsDownloadLinks(String html) {
+        if (isBlank(html)) {
+            return false;
+        }
+        return TAG_PATTERN.matcher(unescapeDownloadLinkTags(html)).find();
+    }
+
+    private boolean hasRenderedBlock(String html) {
+        return isNotBlank(html) && html.contains("tools-download-links");
+    }
+
+    private String extractDownloadLinkBlocks(String html) {
+        if (isBlank(html)) {
+            return "";
+        }
+        Matcher matcher = TAG_PATTERN.matcher(unescapeDownloadLinkTags(html));
+        StringBuilder blocks = new StringBuilder();
+        while (matcher.find()) {
+            blocks.append(matcher.group()).append("\n");
+        }
+        return blocks.toString();
+    }
+
+    private String appendHtml(String content, String htmlToAppend) {
+        if (isBlank(content)) {
+            return htmlToAppend;
+        }
+        return content.stripTrailing() + "\n" + htmlToAppend;
+    }
+
+    private String unescapeDownloadLinkTags(String html) {
+        String normalized = replaceAll(html, ESCAPED_DOWNLOAD_LINKS_TAG_PATTERN, matcher -> "<" + matcher.group(1) + ">");
+        normalized = replaceAll(normalized, ESCAPED_DOWNLOAD_LINK_TAG_PATTERN, matcher -> "<" + matcher.group(1) + ">");
+        return replaceAll(normalized, DOWNLOAD_LINK_TAG_PATTERN,
+                matcher -> "<" + unescapeHtml(matcher.group(1)) + ">");
+    }
+
+    private List<Map<String, Object>> parseLinks(String attrs, String tagContent) {
+        String data = extractGroup(attrs, DATA_LINKS_PATTERN, 1);
+        if (data != null) {
+            data = unescapeHtml(data);
+            try {
+                return objectMapper.readValue(data, new TypeReference<>() {
+                });
+            } catch (Exception e) {
+                return Collections.emptyList();
+            }
+        }
+        return parseDownloadLinkChildren(tagContent);
+    }
+
+    private List<Map<String, Object>> parseDownloadLinkChildren(String tagContent) {
+        List<Map<String, Object>> links = new java.util.ArrayList<>();
+        Matcher matcher = DOWNLOAD_LINK_PATTERN.matcher(tagContent);
+        while (matcher.find()) {
+            String attrs = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+            Map<String, Object> link = parseAttributes(attrs);
+            if (isNotBlank(str(link.get("url")))) {
+                links.add(link);
+            }
+        }
+        return links;
+    }
+
+    private Map<String, Object> parseAttributes(String attrs) {
+        Map<String, Object> result = new java.util.HashMap<>();
+        Matcher matcher = ATTRIBUTE_PATTERN.matcher(attrs);
+        while (matcher.find()) {
+            String name = matcher.group(1);
+            String value = matcher.group(3) != null ? matcher.group(3) : matcher.group(4);
+            result.put(name, unescapeHtml(value));
+        }
+        return result;
     }
 
     private Map<String, String> buildSourceIconMap(DownloadSetting downloadSetting) {

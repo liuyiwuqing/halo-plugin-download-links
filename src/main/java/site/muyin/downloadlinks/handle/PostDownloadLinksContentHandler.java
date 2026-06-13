@@ -17,7 +17,7 @@ public class PostDownloadLinksContentHandler implements ReactivePostContentHandl
         String content = postContent.getContent();
 
         return renderer.render(raw)
-                .flatMap(renderedRaw -> renderer.render(content)
+                .flatMap(renderedRaw -> renderer.renderContent(raw, content)
                         .map(renderedContent -> {
                             postContent.setRaw(renderedRaw);
                             postContent.setContent(renderedContent);
@@ -25,5 +25,4 @@ public class PostDownloadLinksContentHandler implements ReactivePostContentHandl
                         }));
     }
 }
-
 
