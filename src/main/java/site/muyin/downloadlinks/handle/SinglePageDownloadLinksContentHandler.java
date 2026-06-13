@@ -17,7 +17,7 @@ public class SinglePageDownloadLinksContentHandler implements ReactiveSinglePage
         String content = singlePageContent.getContent();
 
         return renderer.render(raw)
-                .flatMap(renderedRaw -> renderer.render(content)
+                .flatMap(renderedRaw -> renderer.renderContent(raw, content)
                         .map(renderedContent -> {
                             singlePageContent.setRaw(renderedRaw);
                             singlePageContent.setContent(renderedContent);
@@ -25,6 +25,5 @@ public class SinglePageDownloadLinksContentHandler implements ReactiveSinglePage
                         }));
     }
 }
-
 
 
