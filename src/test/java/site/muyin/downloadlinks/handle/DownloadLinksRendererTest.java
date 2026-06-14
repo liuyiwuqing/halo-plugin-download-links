@@ -152,6 +152,60 @@ class DownloadLinksRendererTest {
     }
 
     @Test
+    void rendersIconStoredByDefaultEditorEvenWhenSourceIsNotInSettings() {
+        String html = """
+                <download-links data-links="[{&quot;source&quot;:&quot;附件&quot;,&quot;filename&quot;:&quot;附件.zip&quot;,&quot;url&quot;:&quot;https://example.com/attachment.zip&quot;,&quot;icon&quot;:&quot;/plugins/download-links/assets/static/icon/attachment.svg&quot;}]"></download-links>
+                """;
+
+        StepVerifier.create(renderer.render(html))
+                .assertNext(rendered -> {
+                    assertThat(rendered).contains("tools-download-links");
+                    assertThat(rendered).contains("附件.zip");
+                    assertThat(rendered).contains("background-image:url('/plugins/download-links/assets/static/icon/attachment.svg')");
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void rendersBuiltinAttachmentIconWhenLinkHasNoIcon() {
+        String html = """
+                <download-links>
+                  <download-link source="附件" filename="附件.zip" url="https://example.com/attachment.zip"></download-link>
+                </download-links>
+                """;
+
+        StepVerifier.create(renderer.render(html))
+                .assertNext(rendered -> assertThat(rendered)
+                        .contains("background-image:url('/plugins/download-links/assets/static/icon/attachment.svg')")
+                )
+                .verifyComplete();
+    }
+
+    @Test
+    void ignoresAttachmentIconFromSettings() {
+        DownloadLinksRenderer renderer = new DownloadLinksRenderer(
+                new ObjectMapper(),
+                new TestSettingFetcher(List.of(
+                        new DownloadSetting.DownloadSource()
+                                .setName("附件")
+                                .setIcon("/user-changed.svg")
+                ))
+        );
+        String html = """
+                <download-links>
+                  <download-link source="附件" filename="附件.zip" url="https://example.com/attachment.zip"></download-link>
+                </download-links>
+                """;
+
+        StepVerifier.create(renderer.render(html))
+                .assertNext(rendered -> assertThat(rendered)
+                        .contains("background-image:url('/plugins/download-links/assets/static/icon/attachment.svg')")
+                        .doesNotContain("/user-changed.svg")
+                )
+                .verifyComplete();
+    }
+
+    @Test
     void skipsDownloadLinkChildrenWithoutUrl() {
         String html = """
                 <download-links>
@@ -169,17 +223,26 @@ class DownloadLinksRendererTest {
 
     @SuppressWarnings("removal")
     private static class TestSettingFetcher implements ReactiveSettingFetcher {
+        private final List<DownloadSetting.DownloadSource> downloadSourceList;
+
+        private TestSettingFetcher() {
+            this(List.of(
+                    new DownloadSetting.DownloadSource()
+                            .setName("百度网盘")
+                            .setIcon("/plugins/download-links/assets/static/icon/baidu.png")
+            ));
+        }
+
+        private TestSettingFetcher(List<DownloadSetting.DownloadSource> downloadSourceList) {
+            this.downloadSourceList = downloadSourceList;
+        }
 
         @Override
         public <T> Mono<T> fetch(String group, Class<T> clazz) {
             DownloadSetting setting = new DownloadSetting()
                     .setLightModeSelector(".light")
                     .setDarkModeSelector(".dark")
-                    .setDownloadSourceList(List.of(
-                            new DownloadSetting.DownloadSource()
-                                    .setName("百度网盘")
-                                    .setIcon("/plugins/download-links/assets/static/icon/baidu.png")
-                    ));
+                    .setDownloadSourceList(downloadSourceList);
             return Mono.just(clazz.cast(setting));
         }
 

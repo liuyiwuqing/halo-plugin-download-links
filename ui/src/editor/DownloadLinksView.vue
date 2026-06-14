@@ -2,31 +2,23 @@
 import {nodeViewProps, NodeViewWrapper} from "@halo-dev/richtext-editor";
 import {computed, onMounted, ref, watch} from "vue";
 import {consoleApiClient} from "@halo-dev/api-client";
+import {utils} from "@halo-dev/ui-shared";
 import MdiAddBold from '~icons/mdi/add-bold';
 import MdiRemoveBold from '~icons/mdi/remove-bold';
+import MdiPaperclip from "~icons/mdi/paperclip";
+import {applyAttachmentToLinkItem, type AttachmentLike, type LinkItem} from "@/editor/attachment-link";
+import {ATTACHMENT_SOURCE, type PresetItem, withBuiltinAttachmentPreset} from "@/editor/download-source";
 
 const props = defineProps(nodeViewProps as any);
-
-type LinkItem = {
-  url: string;
-  filename: string;
-  source: string;
-  code?: string;
-  icon?: string;
-};
 
 type DownloadSource = {
   name: string;
   icon: string;
 };
 
-type PresetItem = {
-  label: string;
-  value: string;
-  icon: string;
-};
-
 const presets = ref<PresetItem[]>([]);
+const attachmentSelectorVisible = ref(false);
+const activeAttachmentItem = ref<LinkItem>();
 
 async function loadPresets() {
   try {
@@ -34,16 +26,16 @@ async function loadPresets() {
     const configData = config.data as any;
     const downloadSourceList: DownloadSource[] = configData?.basic?.downloadSourceList || [];
 
-    presets.value = downloadSourceList.map((source) => ({
+    presets.value = withBuiltinAttachmentPreset(downloadSourceList.map((source) => ({
       label: source.name,
       value: source.name,
       icon: source.icon
-    }));
+    })));
   } catch (error) {
     console.error("加载下载来源配置失败:", error);
-    presets.value = [
+    presets.value = withBuiltinAttachmentPreset([
       {label: "百度云网盘", value: "百度云网盘", icon: ""}
-    ];
+    ]);
   }
 }
 
@@ -98,6 +90,32 @@ function getCurrentPreset(item: LinkItem) {
   return presets.value.find(p => p.value === item.source) || null;
 }
 
+function openAttachmentSelector(item: LinkItem) {
+  activeAttachmentItem.value = item;
+  attachmentSelectorVisible.value = true;
+}
+
+function closeAttachmentSelector() {
+  attachmentSelectorVisible.value = false;
+  activeAttachmentItem.value = undefined;
+}
+
+function onAttachmentSelect(attachments: AttachmentLike[]) {
+  const attachment = attachments[0];
+  if (activeAttachmentItem.value && attachment) {
+    const attachmentPreset = presets.value.find(p => p.value === ATTACHMENT_SOURCE);
+    applyAttachmentToLinkItem(
+        activeAttachmentItem.value,
+        attachment,
+        (value) => utils.attachment.convertToSimple(value as Parameters<typeof utils.attachment.convertToSimple>[0]),
+        attachmentPreset?.value,
+        attachmentPreset?.icon,
+    );
+    sync();
+  }
+  closeAttachmentSelector();
+}
+
 const hasItems = computed(() => links.value.length > 0);
 
 onMounted(() => {
@@ -143,13 +161,24 @@ onMounted(() => {
         </div>
         <div class="downloadLinks-field downloadLinks-field-url">
           <label>下载地址 <span class="required">*</span></label>
-          <input
-              v-model="item.url"
-              placeholder="https://..."
-              @input="sync"
-              required
-              :class="{ 'input-error': !item.url?.trim() }"
-          />
+          <div class="downloadLinks-urlInputGroup">
+            <input
+                v-model="item.url"
+                placeholder="https://..."
+                @input="sync"
+                required
+                :class="{ 'input-error': !item.url?.trim() }"
+            />
+            <button
+                class="downloadLinks-attachmentBtn"
+                @click="openAttachmentSelector(item)"
+                type="button"
+                title="选择附件"
+            >
+              <MdiPaperclip/>
+              附件
+            </button>
+          </div>
         </div>
         <div class="downloadLinks-field downloadLinks-field-code">
           <label>提取码</label>
@@ -160,6 +189,14 @@ onMounted(() => {
         </button>
       </div>
     </div>
+    <AttachmentSelectorModal
+        v-model:visible="attachmentSelectorVisible"
+        :accepts="['*/*']"
+        :min="1"
+        :max="1"
+        @close="closeAttachmentSelector"
+        @select="onAttachmentSelect"
+    />
   </node-view-wrapper>
 </template>
 
@@ -377,5 +414,37 @@ onMounted(() => {
   border-color: #ef4444;
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1);
 }
-</style>
 
+.downloadLinks-urlInputGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.downloadLinks-urlInputGroup input {
+  flex: 1;
+}
+
+.downloadLinks-attachmentBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #374151;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.downloadLinks-attachmentBtn:hover {
+  border-color: #9ca3af;
+  background: #f9fafb;
+}
+</style>

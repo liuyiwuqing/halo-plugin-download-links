@@ -34,6 +34,8 @@ public class DownloadLinksRenderer {
     private static final Pattern DOWNLOAD_LINK_TAG_PATTERN = Pattern.compile("<(/?download-link\\b[^>]*)>", Pattern.DOTALL);
     private static final String STYLE_ID = "tools-download-links-style";
     private static final String STYLE_MARKER = "<!-- " + STYLE_ID + " -->";
+    private static final String BUILTIN_ATTACHMENT_SOURCE = "附件";
+    private static final String BUILTIN_ATTACHMENT_ICON = "/plugins/download-links/assets/static/icon/attachment.svg";
 
     private final ObjectMapper objectMapper;
     private final ReactiveSettingFetcher settingFetcher;
@@ -160,15 +162,17 @@ public class DownloadLinksRenderer {
 
     private Map<String, String> buildSourceIconMap(DownloadSetting downloadSetting) {
         List<DownloadSetting.DownloadSource> sourceList = downloadSetting.getDownloadSourceList();
-        if (sourceList == null || sourceList.isEmpty()) {
-            return Collections.emptyMap();
-        }
         Map<String, String> map = new java.util.HashMap<>();
-        for (DownloadSetting.DownloadSource source : sourceList) {
-            if (isNotBlank(source.getName()) && isNotBlank(source.getIcon())) {
-                map.put(source.getName(), source.getIcon());
+        if (sourceList != null) {
+            for (DownloadSetting.DownloadSource source : sourceList) {
+                if (isNotBlank(source.getName())
+                        && isNotBlank(source.getIcon())
+                        && !BUILTIN_ATTACHMENT_SOURCE.equals(source.getName())) {
+                    map.put(source.getName(), source.getIcon());
+                }
             }
         }
+        map.put(BUILTIN_ATTACHMENT_SOURCE, BUILTIN_ATTACHMENT_ICON);
         return map;
     }
 
@@ -258,8 +262,7 @@ public class DownloadLinksRenderer {
         int index = 0;
         for (Map<String, Object> link : links) {
             String source = str(link.get("source"));
-            // 根据 source 从配置中获取 icon
-            String icon = sourceIconMap.getOrDefault(source, "");
+            String icon = blankToDefault(str(link.get("icon")), sourceIconMap.getOrDefault(source, ""));
             String iconClass = "tools-download-links__icon--" + index;
             items.append(buildLinkItem(link, iconClass));
 
