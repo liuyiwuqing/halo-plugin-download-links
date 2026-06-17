@@ -12,13 +12,13 @@ spec:
     name: lywq
     website: https://blog.muyin.site
   logo: logo.png
-  homepage: https://github.com/liuyiwuqing/plugin-download-links#readme
-  repo: https://github.com/liuyiwuqing/plugin-download-links
-  issues: https://github.com/liuyiwuqing/plugin-download-links/issues
+  homepage: https://github.com/liuyiwuqing/halo-plugin-download-links#readme
+  repo: https://github.com/liuyiwuqing/halo-plugin-download-links
+  issues: https://github.com/liuyiwuqing/halo-plugin-download-links/issues
   displayName: "云盘链接下载"
   description: "为云盘链接提供下载链接卡片。"
   license:
     - name: "GPL-3.0"
-      url: "https://github.com/liuyiwuqing/plugin-download-links/blob/main/LICENSE"
+      url: "https://github.com/liuyiwuqing/halo-plugin-download-links/blob/main/LICENSE"
   configMapName: plugin-download-links-config
   settingName: plugin-download-links-settings
